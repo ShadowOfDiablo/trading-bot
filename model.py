@@ -1,0 +1,112 @@
+"""
+Per-symbol RandomForest classifier.
+
+Training target: will the price rise by ≥ TARGET_RETURN within the next
+FORWARD_HOURS candles? (binary: 1 = yes / 0 = no)
+
+Walk-forward split is used for validation so no future data leaks into training.
+"""
+
+import os
+import pickle
+import logging
+
+import pandas as pd
+from sklearn.ensemble import RandomForestClassifier
+from sklearn.metrics import classification_report
+
+from features import build_features
+
+log = logging.getLogger(__name__)
+
+MODELS_DIR     = os.path.join(os.path.dirname(__file__), "models")
+FORWARD_HOURS  = 4      # how many candles ahead we're predicting
+TARGET_RETURN  = 0.003  # 0.3% upside threshold counts as "long" target
+
+
+def _path(symbol_yf: str) -> str:
+    os.makedirs(MODELS_DIR, exist_ok=True)
+    return os.path.join(MODELS_DIR, f"{symbol_yf}.pkl")
+
+
+# ── Training ──────────────────────────────────────────────────────────────────
+
+def train(symbol_yf: str, df: pd.DataFrame) -> dict:
+    """
+    Trains and saves a model for symbol_yf.
+    Returns a metrics dict {accuracy, precision, recall}.
+    """
+    features = build_features(df)
+
+    # Future return label — shift(-N) looks N candles ahead
+    forward_ret = df["close"].shift(-FORWARD_HOURS) / df["close"] - 1
+    target      = (forward_ret > TARGET_RETURN).astype(int)
+
+    # Align indices (features has fewer rows due to indicator warmup)
+    idx     = features.index.intersection(target.dropna().index)
+    X, y    = features.loc[idx], target.loc[idx]
+
+    # Time-ordered 70/30 split — NEVER shuffle financial time series
+    split       = int(len(X) * 0.70)
+    X_tr, X_te  = X.iloc[:split],  X.iloc[split:]
+    y_tr, y_te  = y.iloc[:split],  y.iloc[split:]
+
+    clf = RandomForestClassifier(
+        n_estimators=200,
+        max_depth=6,         # shallow trees → less overfitting
+        min_samples_leaf=20, # each leaf needs real support
+        class_weight="balanced",
+        random_state=42,
+        n_jobs=-1,
+    )
+    clf.fit(X_tr, y_tr)
+
+    y_pred  = clf.predict(X_te)
+    report  = classification_report(y_te, y_pred, output_dict=True, zero_division=0)
+    metrics = {
+        "accuracy":  round(report["accuracy"], 3),
+        "precision": round(report.get("1", {}).get("precision", 0), 3),
+        "recall":    round(report.get("1", {}).get("recall",    0), 3),
+    }
+
+    log.info(
+        "%s trained | acc=%.2f prec=%.2f recall=%.2f | train=%d test=%d",
+        symbol_yf, metrics["accuracy"], metrics["precision"], metrics["recall"],
+        len(X_tr), len(X_te),
+    )
+
+    with open(_path(symbol_yf), "wb") as f:
+        pickle.dump({"model": clf, "feature_cols": list(X.columns)}, f)
+
+    return metrics
+
+
+# ── Inference ─────────────────────────────────────────────────────────────────
+
+def load(symbol_yf: str) -> dict | None:
+    """Returns the saved model dict or None if not trained yet."""
+    p = _path(symbol_yf)
+    if not os.path.exists(p):
+        return None
+    with open(p, "rb") as f:
+        return pickle.load(f)
+
+
+def predict(model_data: dict, df: pd.DataFrame, threshold: float = 0.55) -> tuple[int, float]:
+    """
+    Returns (signal, confidence).
+    signal=1 → LONG, signal=0 → FLAT.
+    confidence is the model's probability of the LONG class.
+    """
+    features = build_features(df)
+    if features.empty:
+        return 0, 0.0
+
+    cols   = model_data["feature_cols"]
+    latest = features[cols].iloc[[-1]]
+
+    proba      = model_data["model"].predict_proba(latest)[0]
+    confidence = float(proba[1]) if len(proba) > 1 else 0.0
+    signal     = 1 if confidence >= threshold else 0
+
+    return signal, round(confidence, 3)

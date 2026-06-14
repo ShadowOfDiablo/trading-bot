@@ -4,9 +4,9 @@ from dotenv import load_dotenv
 load_dotenv()
 
 class Config:
-    T212_API_KEY   = os.getenv("T212_API_KEY", "")
-    T212_MODE      = os.getenv("T212_MODE", "demo")
-    T212_BASE_URL  = (
+    T212_API_KEY  = os.getenv("T212_API_KEY", "")
+    T212_MODE     = os.getenv("T212_MODE", "demo")
+    T212_BASE_URL = (
         "https://demo.trading212.com/api/v0"
         if T212_MODE == "demo"
         else "https://live.trading212.com/api/v0"
@@ -15,16 +15,20 @@ class Config:
     TELEGRAM_BOT_TOKEN = os.getenv("TELEGRAM_BOT_TOKEN", "")
     TELEGRAM_CHAT_ID   = os.getenv("TELEGRAM_CHAT_ID", "")
 
-    SYMBOL_T212 = os.getenv("SYMBOL_T212", "QQQ_US_EQ")
-    SYMBOL_YF   = os.getenv("SYMBOL_YF",   "QQQ")
-    INTERVAL    = os.getenv("INTERVAL",    "1h")
+    # Symbols to trade — t212 ticker, yfinance symbol, per-trade risk fraction
+    # ETFs get 1% risk, individual stocks get 0.5% (more volatile)
+    SYMBOLS = [
+        {"t212": "QQQ_US_EQ",  "yf": "QQQ",  "risk": 0.01},
+        {"t212": "SPY_US_EQ",  "yf": "SPY",  "risk": 0.01},
+        {"t212": "TSLA_US_EQ", "yf": "TSLA", "risk": 0.005},
+        {"t212": "NVDA_US_EQ", "yf": "NVDA", "risk": 0.005},
+    ]
 
-    EMA_FAST      = int(os.getenv("EMA_FAST",      "20"))
-    EMA_SLOW      = int(os.getenv("EMA_SLOW",      "50"))
-    RSI_PERIOD    = int(os.getenv("RSI_PERIOD",    "14"))
-    RSI_THRESHOLD = float(os.getenv("RSI_THRESHOLD", "50"))
+    MAX_OPEN_POSITIONS     = 2     # never hold more than this many at once
+    ML_CONFIDENCE_THRESHOLD = 0.55  # model must be ≥55% confident to go long
+    RETRAIN_DAY            = 6     # 6 = Sunday — retrain models weekly
 
-    RISK_PER_TRADE  = float(os.getenv("RISK_PER_TRADE",  "0.01"))
-    MAX_DAILY_LOSS  = float(os.getenv("MAX_DAILY_LOSS",  "0.03"))
+    INTERVAL       = os.getenv("INTERVAL", "1h")
+    MAX_DAILY_LOSS = float(os.getenv("MAX_DAILY_LOSS", "0.03"))
 
 cfg = Config()
