@@ -1,0 +1,18 @@
+[Unit]
+Description=Trading Bot
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=pi
+WorkingDirectory=/home/pi/trading-bot
+Environment=PYTHONUNBUFFERED=1
+ExecStart=/usr/bin/python3 /home/pi/trading-bot/run.py
+Restart=always
+RestartSec=10
+StandardOutput=append:/home/pi/trading-bot/bot.log
+StandardError=append:/home/pi/trading-bot/bot.log
+
+[Install]
+WantedBy=multi-user.target

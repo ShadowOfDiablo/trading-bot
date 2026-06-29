@@ -14,6 +14,7 @@ import argparse
 from config import cfg
 from data_feed import get_ohlcv
 from model import train
+from model_sync import upload_models, current_version_name
 
 logging.basicConfig(
     level=logging.INFO,
@@ -61,5 +62,13 @@ def main(symbol_filter: str | None = None):
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
     parser.add_argument("--symbol", help="Train a single symbol (e.g. NVDA)")
+    parser.add_argument("--upload", action="store_true",
+                        help="Upload trained models to GitHub as a packaged release")
+    parser.add_argument("--version-suffix", default=None,
+                        help="Suffix for the uploaded model version name (e.g. weekend)")
     args = parser.parse_args()
-    main(args.symbol)
+    success = main(args.symbol)
+    if args.upload:
+        version = current_version_name(args.version_suffix or cfg.MODEL_SYNC_VERSION_SUFFIX)
+        upload_models(version)
+    sys.exit(0 if success else 1)

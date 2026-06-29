@@ -5,3 +5,4 @@ __pycache__/
 .venv/
 venv/
 models/*.pkl
+models/models.zip

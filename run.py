@@ -13,6 +13,7 @@ import time
 from datetime import datetime, timedelta
 
 from bot import Bot
+from model_sync import fetch_latest_models_if_needed
 
 logging.basicConfig(
     level=logging.INFO,
@@ -36,6 +37,7 @@ def seconds_until_next_candle(interval_minutes: int = 60) -> float:
 
 def main():
     log.info("Starting trading bot")
+    fetch_latest_models_if_needed()
     bot = Bot()
 
     # Run once immediately on startup (catches up if bot was offline)

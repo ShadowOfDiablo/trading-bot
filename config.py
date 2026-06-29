@@ -5,12 +5,9 @@ load_dotenv()
 
 class Config:
     T212_API_KEY  = os.getenv("T212_API_KEY", "")
-    T212_MODE     = os.getenv("T212_MODE", "demo")
-    T212_BASE_URL = (
-        "https://demo.trading212.com/api/v0"
-        if T212_MODE == "demo"
-        else "https://live.trading212.com/api/v0"
-    )
+    # Keep Trading212 on demo mode for now to avoid accidental live trading.
+    T212_MODE     = "demo"
+    T212_BASE_URL = "https://demo.trading212.com/api/v0"
 
     TELEGRAM_BOT_TOKEN = os.getenv("TELEGRAM_BOT_TOKEN", "")
     TELEGRAM_CHAT_ID   = os.getenv("TELEGRAM_CHAT_ID", "")
@@ -30,5 +27,11 @@ class Config:
 
     INTERVAL       = os.getenv("INTERVAL", "1h")
     MAX_DAILY_LOSS = float(os.getenv("MAX_DAILY_LOSS", "0.03"))
+
+    GITHUB_TOKEN              = os.getenv("GITHUB_TOKEN", "")
+    GITHUB_REPO               = os.getenv("GITHUB_REPO", "")
+    MODEL_SYNC_METHOD         = os.getenv("MODEL_SYNC_METHOD", "github")
+    MODEL_SYNC_AUTO_FETCH     = os.getenv("MODEL_SYNC_AUTO_FETCH", "false").lower() in ("1", "true", "yes")
+    MODEL_SYNC_VERSION_SUFFIX = os.getenv("MODEL_SYNC_VERSION_SUFFIX", "weekend")
 
 cfg = Config()
