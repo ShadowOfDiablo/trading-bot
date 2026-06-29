@@ -8,7 +8,8 @@ Type=simple
 User=pi
 WorkingDirectory=/home/pi/trading-bot
 Environment=PYTHONUNBUFFERED=1
-ExecStart=/usr/bin/python3 /home/pi/trading-bot/run.py
+Environment=PATH=/home/pi/trading-bot/venv/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
+ExecStart=/bin/bash -lc 'if [ -x /home/pi/trading-bot/venv/bin/python ]; then exec /home/pi/trading-bot/venv/bin/python /home/pi/trading-bot/run.py; else exec /usr/bin/python3 /home/pi/trading-bot/run.py; fi'
 Restart=always
 RestartSec=10
 StandardOutput=append:/home/pi/trading-bot/bot.log
