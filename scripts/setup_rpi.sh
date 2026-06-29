@@ -6,7 +6,20 @@ sudo apt update
 sudo apt upgrade -y
 
 echo "==> Installing base dependencies"
-sudo apt install -y python3 python3-pip python3-venv git curl wget build-essential
+sudo apt install -y git curl wget build-essential
+
+# Install a modern Python version for pandas/scikit-learn
+PYTHON_CMD=python3.11
+if ! command -v "$PYTHON_CMD" >/dev/null 2>&1; then
+  sudo apt install -y python3.11 python3.11-venv python3.11-distutils python3.11-dev
+fi
+
+if ! command -v "$PYTHON_CMD" >/dev/null 2>&1; then
+  echo "ERROR: Python 3.11 installation failed. Please update your Raspberry Pi OS or install Python 3.11 manually."
+  exit 1
+fi
+
+echo "==> Using $PYTHON_CMD"
 
 echo "==> Creating app directory"
 APP_DIR="/home/pi/trading-bot"
@@ -24,7 +37,7 @@ else
 fi
 
 echo "==> Creating virtual environment"
-python3 -m venv venv
+$PYTHON_CMD -m venv venv
 source venv/bin/activate
 pip install --upgrade pip
 pip install -r requirements.txt
