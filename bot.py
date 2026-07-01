@@ -15,6 +15,7 @@ from strategy import Signal, compute_signal
 from risk_manager import (
     is_market_open, position_size,
     daily_loss_exceeded, open_position_count,
+    check_position_safety
 )
 import notifier
 
@@ -54,11 +55,6 @@ class Bot:
             log.error("Failed to initialize bot parameters: %s", e)
             self.state.killed = True
 
-        symbols = [s["yf"] for s in cfg.SYMBOLS]
-        log.info("Bot initialised | cash=%.2f | mode=%s | symbols=%s",
-                 cash, cfg.T212_MODE, symbols)
-        notifier.alert_startup(cfg.T212_MODE, ", ".join(symbols))
-
     # ── Main cycle ────────────────────────────────────────────────────────────
 
     def run_cycle(self):
@@ -85,15 +81,12 @@ class Bot:
         portfolio = self.client.get_portfolio()
         t212_tickers = [s["t212"] for s in cfg.SYMBOLS]
 
+        # Portfolio-level open P&L for kill switch
         open_pnl = sum(
             float(p["ppl"]) for p in portfolio if p["ticker"] in t212_tickers
         )
 
         log.info(f"DEBUG VALUES ──> Start Cash: {self.state.start_cash} | Current Cash: {cash} | Open P&L: {open_pnl}")
-        # Portfolio-level open P&L for kill switch
-        open_pnl = sum(
-            float(p["ppl"]) for p in portfolio if p["ticker"] in t212_tickers
-        )
 
         if daily_loss_exceeded(self.state.start_cash, cash, open_pnl, cfg.MAX_DAILY_LOSS):
             self._trigger_kill_switch(cash, open_pnl)
@@ -111,6 +104,22 @@ class Bot:
         if isinstance(yf, tuple): yf = yf[0]
         if isinstance(t212, tuple): t212 = t212[0]
 
+        # ── 1. HARD RISK FILTER CHECK ──
+        pos = next((p for p in portfolio if p["ticker"] == t212), None)
+        in_position = pos is not None
+        
+        if in_position:
+            safety_status = check_position_safety(t212, portfolio)
+            if safety_status in ["STOP_LOSS", "TAKE_PROFIT"]:
+                log.warning("CRITICAL RISK TRIGGERED: Closing %s due to %s", t212, safety_status)
+                
+                # We need a fallback price for the log if df hasn't been fetched yet
+                current_price = float(pos.get("currentPrice", 0)) 
+                
+                self._close_long(t212, yf, pos, current_price, trigger_reason=safety_status)
+                return  # Skip ML pipeline for this asset this cycle
+
+        # ── 2. ML STRATEGY PIPELINE ──
         try:
             df = get_ohlcv(symbol=str(yf))
             signal, indicators = compute_signal(df, str(yf))
@@ -119,9 +128,7 @@ class Bot:
             log.exception("%s | data/signal error occurred:", yf)
             return
 
-        pos         = next((p for p in portfolio if p["ticker"] == t212), None)
-        in_position = pos is not None
-        price       = indicators["close"]
+        price = indicators["close"]
 
         if signal == Signal.LONG and not in_position:
             if n_open >= cfg.MAX_OPEN_POSITIONS:
@@ -132,7 +139,7 @@ class Bot:
             n_open += 1
 
         elif signal == Signal.FLAT and in_position:
-            self._close_long(t212, yf, pos, price)
+            self._close_long(t212, yf, pos, price, trigger_reason="ML exit signal")
 
     # ── Trade actions ─────────────────────────────────────────────────────────
 
@@ -146,11 +153,11 @@ class Bot:
         self.client.place_market_buy(t212, qty)
         notifier.alert_trade("BUY", t212, qty, price, f"ML confidence={conf}")
 
-    def _close_long(self, t212, yf, pos, price):
+    def _close_long(self, t212, yf, pos, price, trigger_reason="ML exit signal"):
         qty = float(pos["quantity"])
-        log.info("SELL %s x%.1f @ ~%.4f", t212, qty, price)
+        log.info("SELL %s x%.1f @ ~%.4f (Reason: %s)", t212, qty, price, trigger_reason)
         self.client.close_position(t212)
-        notifier.alert_trade("SELL", t212, qty, price, "ML exit signal")
+        notifier.alert_trade("SELL", t212, qty, price, trigger_reason)
 
     def _trigger_kill_switch(self, cash, open_pnl):
         equity   = cash + open_pnl
