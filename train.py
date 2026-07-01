@@ -8,11 +8,10 @@ Usage:
     python train.py NVDA TSLA QQQ   # Train multiple specific symbols
     python train.py --upload        # Train all and upload to GitHub
 """
-
+from __future__ import annotations
 import sys
 import logging
 import argparse
-from __future__ import annotations
 from config import cfg
 from data_feed import get_ohlcv
 from model import train
