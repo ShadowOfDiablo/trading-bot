@@ -1,0 +1,11 @@
+{
+  "version": "W27Y26-weekend",
+  "timestamp": "2026-07-01T15:05:27Z",
+  "source": "local",
+  "files": [
+    "NVDA.pkl",
+    "QQQ.pkl",
+    "SPY.pkl",
+    "TSLA.pkl"
+  ]
+}

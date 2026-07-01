@@ -40,31 +40,30 @@ def train(symbol_yf: str, df: pd.DataFrame) -> dict:
     """
     features = build_features(df)
 
-    # Future return label — shift(-N) looks N candles ahead
+    # 1. Compute the raw forward returns matching the raw DataFrame index
     forward_ret = df["close"].shift(-FORWARD_HOURS) / df["close"] - 1
     
-    # ─── FIX: Align indices BEFORE comparing ───
-    # Drop rows where indicators are warming up, or where future returns are NaN
-    idx = features.index.intersection(forward_ret.dropna().index)
-    features = features.loc[idx]
-    forward_ret = forward_ret.loc[idx]
-
-    # Dynamic Target: Volatility-adjusted using normalized ATR
+    # 2. Extract the volatility metric matching the raw DataFrame index
+    # (Since features.index is a subset of df.index, we match indices exactly)
     if "atr_14" in features.columns:
-        threshold = ATR_MULTIPLIER * features["atr_14"]
+        vol_threshold = ATR_MULTIPLIER * features["atr_14"]
     else:
-        # Fallback if atr_14 is missing
-        threshold = 0.003
-        
-    target = (forward_ret > threshold).astype(int)
+        vol_threshold = pd.Series(0.003, index=features.index)
 
-    # Now X and y are perfectly aligned
-    X, y = features, target
+    # 3. Align all three components to a perfectly matching intersection index
+    intersect_idx = features.index.intersection(forward_ret.dropna().index)
+    
+    X = features.loc[intersect_idx]
+    y_ret = forward_ret.loc[intersect_idx]
+    y_thresh = vol_threshold.loc[intersect_idx]
+        
+    # 4. Perform the comparison on identical structural alignments
+    target = (y_ret > y_thresh).astype(int)
 
     # Time-ordered 70/30 split — NEVER shuffle financial time series
     split       = int(len(X) * 0.70)
     X_tr, X_te  = X.iloc[:split],  X.iloc[split:]
-    y_tr, y_te  = y.iloc[:split],  y.iloc[split:]
+    y_tr, y_te  = target.iloc[:split],  target.iloc[split:]
 
     # Setup cross-validation for time series
     tscv = TimeSeriesSplit(n_splits=3)
@@ -72,27 +71,25 @@ def train(symbol_yf: str, df: pd.DataFrame) -> dict:
     # Define a tighter, more nimble hyperparameter grid
     param_grid = {
         "n_estimators": [200, 300],
-        "max_depth": [6, 8, 12],                # Added deeper trees to capture finer regimes
-        "min_samples_leaf": [3, 8, 15],          # Slightly lower bounds to capture patterns
+        "max_depth": [6, 8, 12],                
+        "min_samples_leaf": [3, 8, 15],          
         "max_features": ["sqrt"]
     }
 
-    # Base classifier (Note: class_weight="balanced" removed to boost precision)
-    # 3. Use 'balanced_subsample' to account for the volatility target scarcity
+    # Use 'balanced_subsample' to handle volatility target scarcity
     base_clf = RandomForestClassifier(
-        class_weight="balanced_subsample",       # Dynamically balances weights per tree split
+        class_weight="balanced_subsample",       
         random_state=42, 
         n_jobs=-1
     )
 
-    # Search for the best parameters, optimizing strictly for precision
-    # Search for parameters using F1 scoring to ensure the bot actually finds trades
+    # Search using average_precision (PR-AUC) as the optimization score
     search = RandomizedSearchCV(
         estimator=base_clf,
         param_distributions=param_grid,
         n_iter=10,             
         cv=tscv,
-        scoring="average_precision",             # <── Optimizes the entire Precision/Recall tradeoff curve
+        scoring="average_precision",             
         random_state=42,
         n_jobs=-1
     )
@@ -122,7 +119,6 @@ def train(symbol_yf: str, df: pd.DataFrame) -> dict:
         pickle.dump({"model": clf, "feature_cols": list(X.columns)}, f)
 
     return metrics
-
 
 # ── Inference ─────────────────────────────────────────────────────────────────
 

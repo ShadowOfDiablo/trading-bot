@@ -23,12 +23,42 @@ def _ensure_models_dir() -> None:
 
 
 def current_version_name(suffix: str | None = None, now: datetime | None = None) -> str:
+    """Formats base calendar timestamps exactly like W27Y26."""
     now = now or datetime.utcnow()
     week = now.isocalendar()[1]
     year = now.year % 100
-    suffix = suffix or cfg.MODEL_SYNC_VERSION_SUFFIX
-    version = f"W{week:02d}Y{year:02d}"
-    return f"{version}-{suffix}" if suffix else version
+    return f"W{week:02d}Y{year:02d}"
+
+
+def _get_next_increment_tag() -> str:
+    """Queries the remote repo and automatically increments version labels like -v1.0.0"""
+    base_tag = current_version_name()
+    
+    try:
+        url = _github_api_url(f"/repos/{_github_repo()}/releases")
+        resp = requests.get(url, headers=_github_headers())
+        if resp.status_code == 404:
+            return f"{base_tag}-v1.0.0"
+        resp.raise_for_status()
+        releases = resp.json()
+    except Exception as e:
+        log.warning("Could not read historical releases, defaulting to patch v1.0.0: %s", e)
+        return f"{base_tag}-v1.0.0"
+
+    # Match existing releases belonging to this week's structural pattern
+    pattern = re.compile(rf"^{base_tag}-v1\.0\.(\d+)$")
+    highest_patch = -1
+
+    for r in releases:
+        tag = r.get("tag_name", "")
+        match = pattern.match(tag)
+        if match:
+            patch_num = int(match.group(1))
+            if patch_num > highest_patch:
+                highest_patch = patch_num
+
+    next_patch = highest_patch + 1
+    return f"{base_tag}-v1.0.{next_patch}"
 
 
 def read_local_metadata() -> dict | None:
@@ -54,7 +84,7 @@ def write_local_metadata(version: str, files: list[str], source: str = "local", 
 
 def package_models(version: str | None = None) -> Path:
     _ensure_models_dir()
-    version = version or current_version_name()
+    version = version or _get_next_increment_tag()
     local_files = sorted(p.name for p in MODELS_DIR.glob("*.pkl"))
     if not local_files:
         raise RuntimeError("No model files found in models/ to package.")
@@ -167,7 +197,7 @@ def _upload_asset(release: dict, file_path: Path, asset_name: str) -> dict:
 def upload_models(version: str | None = None) -> dict:
     if cfg.MODEL_SYNC_METHOD.lower() != "github":
         raise RuntimeError("Only github sync method is implemented currently.")
-    version = version or current_version_name()
+    version = version or _get_next_increment_tag()
     zip_path = package_models(version)
     release = _ensure_release(version, version, body=f"Model package {version}")
     asset = _upload_asset(release, zip_path, PACKAGE_NAME)
@@ -204,9 +234,18 @@ def _parse_timestamp(value: str) -> datetime:
 def _remote_is_newer(remote_release: dict, local_metadata: dict | None) -> bool:
     if local_metadata is None:
         return True
-    remote_ts = _parse_timestamp(remote_release.get("published_at") or remote_release.get("created_at"))
-    local_ts = _parse_timestamp(local_metadata["timestamp"])
-    return remote_ts > local_ts
+    
+    remote_version = remote_release.get("tag_name", "")
+    local_version = local_metadata.get("version", "")
+    
+    # If versions match exactly, depend strictly on timestamp valuations
+    if remote_version == local_version:
+        remote_ts = _parse_timestamp(remote_release.get("published_at") or remote_release.get("created_at"))
+        local_ts = _parse_timestamp(local_metadata["timestamp"])
+        return remote_ts > local_ts
+        
+    # Standard fallback comparison for incremental tags
+    return remote_version > local_version
 
 
 def fetch_latest_models() -> bool:
