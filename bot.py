@@ -116,7 +116,7 @@ class Bot:
             signal, indicators = compute_signal(df, str(yf))
             log.info("%s | %s | %s", yf, signal.value, indicators)
         except Exception as e:
-            log.error("%s | data/signal error: %s", yf, e)
+            log.exception("%s | data/signal error occurred:", yf)
             return
 
         pos         = next((p for p in portfolio if p["ticker"] == t212), None)

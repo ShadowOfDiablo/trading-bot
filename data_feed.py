@@ -23,6 +23,10 @@ def get_ohlcv(symbol: str | None = None, interval: str | None = None, bars: int 
     if df.empty:
         raise RuntimeError(f"yfinance returned no data for {symbol} ({interval})")
 
+    # ─── FIX: Flatten MultiIndex columns if yfinance returns tuples ───
+    if isinstance(df.columns, pd.MultiIndex):
+        df.columns = df.columns.get_level_values(0)
+
     df.columns = [c.lower() for c in df.columns]
     df = df[["open", "high", "low", "close", "volume"]].dropna()
 

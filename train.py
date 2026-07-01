@@ -3,8 +3,10 @@ Standalone training script — run this once before starting the bot,
 then again weekly to keep models fresh on new market data.
 
 Usage:
-    python train.py
-    python train.py --symbol NVDA   # retrain one symbol only
+    python train.py                 # Train all symbols in config
+    python train.py NVDA            # Train one symbol only
+    python train.py NVDA TSLA QQQ   # Train multiple specific symbols
+    python train.py --upload        # Train all and upload to GitHub
 """
 
 import sys
@@ -40,13 +42,22 @@ def train_symbol(sym: dict):
         return False
 
 
-def main(symbol_filter: str | None = None):
+def main(tickers: list[str] | None = None) -> bool:
+    """
+    Main training entry point. 
+    Accepts an optional list of ticker strings. If empty/None, trains all config symbols.
+    Returns True if all requested models trained successfully, False otherwise.
+    """
     symbols = cfg.SYMBOLS
-    if symbol_filter:
-        symbols = [s for s in symbols if s["yf"].upper() == symbol_filter.upper()]
+    
+    if tickers:
+        # Normalize inputs to uppercase strings
+        target_tickers = [t.upper() for t in tickers]
+        symbols = [s for s in symbols if s["yf"].upper() in target_tickers]
+        
         if not symbols:
-            log.error("Symbol '%s' not found in config", symbol_filter)
-            sys.exit(1)
+            log.error("None of the requested tickers %s were found in config", tickers)
+            return False
 
     log.info("Training %d model(s): %s", len(symbols), [s["yf"] for s in symbols])
     results = [train_symbol(s) for s in symbols]
@@ -55,20 +66,23 @@ def main(symbol_filter: str | None = None):
     log.info("Done — %d/%d models trained successfully. Models saved to models/",
              passed, len(results))
 
-    if passed < len(results):
-        sys.exit(1)
+    return passed == len(results)
 
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
-    parser.add_argument("--symbol", help="Train a single symbol (e.g. NVDA)")
+    # Using nargs="*" lets us pass 0, 1, or multiple space-separated tickers
+    parser.add_argument("tickers", nargs="*", help="Optional ticker(s) to train (e.g. NVDA TSLA)")
     parser.add_argument("--upload", action="store_true",
                         help="Upload trained models to GitHub as a packaged release")
     parser.add_argument("--version-suffix", default=None,
                         help="Suffix for the uploaded model version name (e.g. weekend)")
     args = parser.parse_args()
-    success = main(args.symbol)
-    if args.upload:
+    
+    success = main(args.tickers)
+    
+    if args.upload and success:
         version = current_version_name(args.version_suffix or cfg.MODEL_SYNC_VERSION_SUFFIX)
         upload_models(version)
+        
     sys.exit(0 if success else 1)
