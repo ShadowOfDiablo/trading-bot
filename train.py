@@ -12,7 +12,7 @@ Usage:
 import sys
 import logging
 import argparse
-
+from __future__ import annotations
 from config import cfg
 from data_feed import get_ohlcv
 from model import train
