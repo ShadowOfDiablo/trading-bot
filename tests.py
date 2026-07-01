@@ -31,6 +31,8 @@ def _ohlcv(closes, seed=42):
 # ── features.py ───────────────────────────────────────────────────────────────
 
 from features import build_features, _ema, _rsi, _atr
+from t212_client import T212Client
+from bot import Bot
 
 
 class TestEma(unittest.TestCase):
@@ -246,6 +248,34 @@ class TestNotifier(unittest.TestCase):
     def test_kill_switch_alert(self, mock_send):
         notifier.alert_kill_switch(0.035)
         self.assertIn("Kill switch", mock_send.call_args[0][0])
+
+
+# ── t212_client.py ─────────────────────────────────────────────────────────
+
+class TestT212ClientMockMode(unittest.TestCase):
+    @patch("t212_client.requests.get", side_effect=RuntimeError("network blocked"))
+    def test_mock_mode_bypasses_auth_check(self, mock_get):
+        with patch("t212_client.cfg") as c:
+            c.USE_MOCK_T212 = True
+            c.T212_API_KEY = "key"
+            c.T212_API_SECRET = "secret"
+            c.T212_BASE_URL = "https://demo.trading212.com/api/v0"
+            client = T212Client()
+        ok, status, text = client.check_auth()
+        self.assertTrue(ok)
+        self.assertEqual(status, 200)
+        self.assertIn("mock", text.lower())
+        mock_get.assert_not_called()
+
+
+class TestBotStartup(unittest.TestCase):
+    @patch("bot.notifier.alert_error")
+    def test_does_not_kill_on_rate_limit(self, mock_alert):
+        with patch("bot.T212Client") as client_cls:
+            client = client_cls.return_value
+            client.check_auth.return_value = (False, 429, "too many requests")
+            bot = Bot()
+        self.assertFalse(bot.state.killed)
 
 
 # ── data_feed.py ──────────────────────────────────────────────────────────────

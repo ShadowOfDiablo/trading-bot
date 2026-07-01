@@ -5,8 +5,10 @@ load_dotenv()
 
 class Config:
     T212_API_KEY  = os.getenv("T212_API_KEY", "")
+    T212_API_SECRET = os.getenv("T212_API_SECRET", "")
+    USE_MOCK_T212 = os.getenv("USE_MOCK_T212", "false").lower() in ("1", "true", "yes")
     # Keep Trading212 on demo mode for now to avoid accidental live trading.
-    T212_MODE     = "demo"
+    T212_MODE     = os.getenv("T212_MODE", "demo")
     T212_BASE_URL = "https://demo.trading212.com/api/v0"
 
     TELEGRAM_BOT_TOKEN = os.getenv("TELEGRAM_BOT_TOKEN", "")

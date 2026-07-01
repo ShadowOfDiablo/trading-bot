@@ -10,7 +10,7 @@ Usage:
 
 import logging
 import time
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 
 from bot import Bot
 from model_sync import fetch_latest_models_if_needed
@@ -28,7 +28,7 @@ log = logging.getLogger(__name__)
 
 def seconds_until_next_candle(interval_minutes: int = 60) -> float:
     """Returns seconds to sleep until the next candle close (plus a 5s buffer)."""
-    now = datetime.utcnow()
+    now = datetime.now(timezone.utc)
     minutes_past = now.minute % interval_minutes
     seconds_past = minutes_past * 60 + now.second
     remaining    = interval_minutes * 60 - seconds_past + 5  # 5s buffer
@@ -39,8 +39,9 @@ def main():
     log.info("Starting trading bot")
     fetch_latest_models_if_needed()
     bot = Bot()
+    log.info("Pausing briefly to respect API rate boundaries...")
+    time.sleep(2)
 
-    # Run once immediately on startup (catches up if bot was offline)
     bot.run_cycle()
 
     while True:

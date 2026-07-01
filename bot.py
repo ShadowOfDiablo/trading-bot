@@ -35,8 +35,25 @@ class Bot:
         self._init()
 
     def _init(self):
-        cash = self.client.get_cash()
-        self.state.start_cash = cash
+        # Use our updated ensure_auth method to establish the session correctly
+        if not self.client.ensure_auth():
+            log.error("T212 auth check failed.")
+            notifier.alert_error("T212 auth check failed.")
+            # Prevent trading loops from running until credentials are fixed
+            self.state.killed = True
+            return
+
+        try:
+            cash = self.client.get_cash()
+            self.state.start_cash = cash
+            symbols = [s["yf"] for s in cfg.SYMBOLS]
+            log.info("Bot initialised | cash=%.2f | mode=%s | symbols=%s",
+                     cash, cfg.T212_MODE, symbols)
+            notifier.alert_startup(cfg.T212_MODE, ", ".join(symbols))
+        except T212Error as e:
+            log.error("Failed to initialize bot parameters: %s", e)
+            self.state.killed = True
+
         symbols = [s["yf"] for s in cfg.SYMBOLS]
         log.info("Bot initialised | cash=%.2f | mode=%s | symbols=%s",
                  cash, cfg.T212_MODE, symbols)
@@ -68,6 +85,11 @@ class Bot:
         portfolio = self.client.get_portfolio()
         t212_tickers = [s["t212"] for s in cfg.SYMBOLS]
 
+        open_pnl = sum(
+            float(p["ppl"]) for p in portfolio if p["ticker"] in t212_tickers
+        )
+
+        log.info(f"DEBUG VALUES ──> Start Cash: {self.state.start_cash} | Current Cash: {cash} | Open P&L: {open_pnl}")
         # Portfolio-level open P&L for kill switch
         open_pnl = sum(
             float(p["ppl"]) for p in portfolio if p["ticker"] in t212_tickers
@@ -84,10 +106,14 @@ class Bot:
 
     def _process_symbol(self, sym: dict, cash: float, portfolio: list, n_open: int):
         yf, t212, risk = sym["yf"], sym["t212"], sym["risk"]
+        
+        # If config values are wrapped in a tuple, extract the string element cleanly
+        if isinstance(yf, tuple): yf = yf[0]
+        if isinstance(t212, tuple): t212 = t212[0]
 
         try:
-            df = get_ohlcv(symbol=yf)
-            signal, indicators = compute_signal(df, yf)
+            df = get_ohlcv(symbol=str(yf))
+            signal, indicators = compute_signal(df, str(yf))
             log.info("%s | %s | %s", yf, signal.value, indicators)
         except Exception as e:
             log.error("%s | data/signal error: %s", yf, e)
